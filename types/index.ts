@@ -1,5 +1,5 @@
 export type ProjectStatus = 'generating' | 'complete' | 'failed' | 'idle'
-export type AppMode = 'generator' | 'judge' | 'architect' | 'debugger'
+export type AppMode = 'generator' | 'quality'
 export type IssueSeverity = 'critical' | 'warning' | 'info'
 export type SeniorVerdict = 'pass' | 'maybe' | 'fail'
 export type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
@@ -98,4 +98,70 @@ export interface TestResult {
   name: string
   status: 'pass' | 'fail' | 'skip'
   duration: number
+}
+
+// ── Code Judge ──────────────────────────────────────────────────────────────
+
+export interface JudgeIssue {
+  id: string
+  title: string
+  severity: 'critical' | 'warning' | 'info'
+  category: 'security' | 'performance' | 'style' | 'architecture'
+  line?: number
+  description: string
+  suggestion: string
+}
+
+export interface CodeJudgeResult {
+  overallScore: number
+  scores: {
+    security: number
+    performance: number
+    quality: number
+    architecture: number
+  }
+  issues: JudgeIssue[]
+  improvedCode?: string
+  verdict: 'excellent' | 'good' | 'needs-improvement' | 'poor'
+}
+
+// ── Architect ────────────────────────────────────────────────────────────────
+
+export interface ArchitectureResult {
+  projectName: string
+  systemOverview: string
+  mermaidDiagram: string
+  systemDiagram: {
+    nodes: { id: string; label: string; type: 'client' | 'server' | 'database' | 'service' }[]
+    edges: { from: string; to: string; label?: string }[]
+  }
+  databaseSchema: {
+    tables: {
+      name: string
+      columns: { name: string; type: string; primary?: boolean; foreignKey?: string }[]
+    }[]
+  }
+  apiRoutes: {
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+    route: string
+    description: string
+    requestBody?: string
+    responseBody?: string
+  }[]
+  techStack: string[]
+}
+
+// ── Debugger ─────────────────────────────────────────────────────────────────
+
+export interface DebuggerResult {
+  rootCause: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  explanation: string
+  fixedCode: string
+  stepsToReproduce?: string[]
+  fixStrategy: {
+    approach: string
+    changes: string[]
+  }
+  confidence: number
 }

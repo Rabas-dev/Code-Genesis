@@ -1,22 +1,13 @@
-import type { CodeAnalysis } from '@/types'
+import type { CodeJudgeResult } from '@/types'
 import { cn } from '@/lib/utils'
 
-interface ScoreCardProps {
-  analysis: CodeAnalysis
-}
-
 function getScoreColor(score: number) {
-  if (score >= 75) return { text: 'text-emerald-400', track: '#10b981', bg: 'bg-emerald-500/10' }
-  if (score >= 50) return { text: 'text-amber-400', track: '#f59e0b', bg: 'bg-amber-500/10' }
-  return { text: 'text-red-400', track: '#ef4444', bg: 'bg-red-500/10' }
+  if (score >= 75) return { text: 'text-emerald-400', track: '#10b981' }
+  if (score >= 50) return { text: 'text-amber-400', track: '#f59e0b' }
+  return { text: 'text-red-400', track: '#ef4444' }
 }
 
-interface MiniScoreProps {
-  label: string
-  score: number
-}
-
-function MiniScore({ label, score }: MiniScoreProps) {
+function MiniScore({ label, score }: { label: string; score: number }) {
   const color = getScoreColor(score)
   return (
     <div className="flex items-center justify-between text-xs">
@@ -34,41 +25,50 @@ function MiniScore({ label, score }: MiniScoreProps) {
   )
 }
 
-export function ScoreCard({ analysis }: ScoreCardProps) {
-  const { overallScore, securityScore, performanceScore, qualityScore, architectureScore } = analysis
+const VERDICT_CONFIG: Record<CodeJudgeResult['verdict'], { label: string; cls: string; emoji: string }> = {
+  excellent: { label: 'Excellent — Ship it', emoji: '✅', cls: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' },
+  good: { label: 'Good — Minor fixes suggested', emoji: '👍', cls: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
+  'needs-improvement': { label: 'Needs improvement before merge', emoji: '⚠️', cls: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
+  poor: { label: 'Would not pass review', emoji: '❌', cls: 'bg-red-500/10 border-red-500/30 text-red-300' },
+}
+
+export function ScoreCard({ result }: { result: CodeJudgeResult }) {
+  const { overallScore, scores, verdict } = result
   const color = getScoreColor(overallScore)
   const pct = overallScore / 100
   const conicVal = `conic-gradient(${color.track} 0deg, ${color.track} ${pct * 360}deg, #27272a ${pct * 360}deg)`
+  const v = VERDICT_CONFIG[verdict] ?? VERDICT_CONFIG['needs-improvement']
 
   return (
-    <div className="rounded-xl border border-border p-4 space-y-4">
-      {/* Circle score */}
-      <div className="flex flex-col items-center gap-2">
-        <div
-          className="w-24 h-24 rounded-full flex items-center justify-center"
-          style={{ background: conicVal, padding: '3px' }}
-        >
-          <div className="w-full h-full rounded-full bg-background flex flex-col items-center justify-center">
-            <span className={cn('text-2xl font-black', color.text)}>{overallScore}</span>
-            <span className="text-[9px] text-muted-foreground">/100</span>
+    <div className="space-y-3">
+      {/* Verdict badge */}
+      <div className={cn('rounded-xl border p-3 flex items-center gap-2.5', v.cls)}>
+        <span className="text-lg">{v.emoji}</span>
+        <p className="text-sm font-semibold">{v.label}</p>
+      </div>
+
+      {/* Score ring + sub-scores */}
+      <div className="rounded-xl border border-border p-4 space-y-4">
+        <div className="flex flex-col items-center gap-2">
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center"
+            style={{ background: conicVal, padding: '3px' }}
+          >
+            <div className="w-full h-full rounded-full bg-background flex flex-col items-center justify-center">
+              <span className={cn('text-2xl font-black', color.text)}>{overallScore}</span>
+              <span className="text-[9px] text-muted-foreground">/100</span>
+            </div>
           </div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Overall Score</p>
         </div>
-        <p className="text-xs font-semibold text-center text-muted-foreground uppercase tracking-wider">
-          Overall Quality Score
-        </p>
-      </div>
 
-      {/* Sub-scores */}
-      <div className="space-y-2">
-        <MiniScore label="Security" score={securityScore} />
-        <MiniScore label="Performance" score={performanceScore} />
-        <MiniScore label="Quality" score={qualityScore} />
-        <MiniScore label="Architecture" score={architectureScore} />
+        <div className="space-y-2">
+          <MiniScore label="Security" score={scores.security} />
+          <MiniScore label="Performance" score={scores.performance} />
+          <MiniScore label="Quality" score={scores.quality} />
+          <MiniScore label="Architecture" score={scores.architecture} />
+        </div>
       </div>
-
-      <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-3">
-        {analysis.summary}
-      </p>
     </div>
   )
 }
