@@ -5,7 +5,7 @@ import { useLLMStore } from '@/store/useLLMStore'
 import { useGenerationStore } from '@/store/useGenerationStore'
 import {
   Menu, Wand2, Download, Gauge,
-  Settings2, GitBranch, Zap, ChevronRight, MessageSquare,
+  Settings2, GitBranch, Zap, ChevronRight, MessageSquare, FileCode2, Timer,
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { cn } from '@/lib/utils'
@@ -30,7 +30,7 @@ interface NavbarProps {
 export function Navbar({ project }: NavbarProps) {
   const { activeMode, setActiveMode, toggleSidebar, currentProject, chatOpen, toggleChat } = useIDEStore()
   const openSettings = useLLMStore((s) => s.openSettings)
-  const { generatedFiles } = useGenerationStore()
+  const { generatedFiles, generationDurationMs } = useGenerationStore()
   const [avatarInitial, setAvatarInitial] = useState('U')
   const [pushModalOpen, setPushModalOpen] = useState(false)
 
@@ -110,6 +110,25 @@ export function Navbar({ project }: NavbarProps) {
           })}
         </div>
 
+        {/* Generation metrics pill — visible after a project is generated */}
+        {allFiles.length > 0 && (
+          <div className="hidden lg:flex items-center gap-2 ml-2 px-2.5 py-1 rounded-lg bg-muted/50 border border-border text-xs text-muted-foreground shrink-0 select-none">
+            <FileCode2 className="w-3 h-3 text-violet-400" />
+            <span className="tabular-nums">
+              <span className="font-semibold text-foreground">{allFiles.length}</span> files
+            </span>
+            {generationDurationMs && (
+              <>
+                <span className="w-px h-3 bg-border" />
+                <Timer className="w-3 h-3 text-emerald-400" />
+                <span className="tabular-nums">
+                  <span className="font-semibold text-foreground">{(generationDurationMs / 1000).toFixed(1)}s</span>
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Right cluster */}
         <div className="flex items-center gap-0.5 ml-auto shrink-0">
           {allFiles.length > 0 && (
@@ -152,7 +171,7 @@ export function Navbar({ project }: NavbarProps) {
           </button>
           <ThemeToggle />
           <Avatar className="w-6 h-6 cursor-pointer ml-0.5">
-            <AvatarFallback className="text-[10px] bg-zinc-700 text-zinc-300 font-semibold">{avatarInitial}</AvatarFallback>
+            <AvatarFallback className="text-[10px] bg-primary text-primary-foreground font-semibold">{avatarInitial}</AvatarFallback>
           </Avatar>
         </div>
       </nav>

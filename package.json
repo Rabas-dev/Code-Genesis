@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null; node server.js",
+    "dev": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null; NODE_OPTIONS=--max-old-space-size=3072 node server.js",
     "build": "next build",
-    "start": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null; NODE_ENV=production node server.js",
+    "start": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null; NODE_ENV=production NODE_OPTIONS=--max-old-space-size=3072 node server.js",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
   },
   "dependencies": {

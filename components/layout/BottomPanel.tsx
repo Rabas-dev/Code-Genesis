@@ -8,16 +8,18 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown, Play, Square, ExternalLink,
-  Loader2, TerminalSquare, FlaskConical, Maximize2, Minimize2,
+  Loader2, TerminalSquare, FlaskConical, Maximize2, Minimize2, Wrench,
 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { TestRunner } from '@/components/testing/TestRunner'
 import { toast } from '@/store/useToastStore'
+import { useAutoFix } from '@/lib/autofix/useAutoFix'
+import { useAutoFixStore } from '@/store/useAutoFixStore'
 
 // Load terminal client-only — xterm requires the DOM
 const TerminalPanel = dynamic(
   () => import('@/components/shared/TerminalPanel').then((m) => m.TerminalPanel),
-  { ssr: false, loading: () => <div className="w-full h-full bg-zinc-950" /> }
+  { ssr: false, loading: () => <div className="w-full h-full bg-background" /> }
 )
 
 
@@ -33,6 +35,8 @@ export function BottomPanel() {
   } = useIDEStore()
 
   const { generatedFiles, logs } = useGenerationStore()
+  const { handleError, notifyCompiled } = useAutoFix()
+  const { enabled: autoFixEnabled, toggleEnabled: toggleAutoFix } = useAutoFixStore()
 
   const [runState, setRunState] = useState<RunState>('idle')
   const [terminalKey, setTerminalKey] = useState(0)
@@ -112,15 +116,15 @@ export function BottomPanel() {
   return (
     <div className="flex flex-col h-full">
       {/* Tab bar */}
-      <div className="flex items-center gap-0.5 px-3 border-b border-border shrink-0 h-8 bg-muted/20">
+      <div className="flex items-center gap-0.5 px-2 border-b border-border shrink-0 h-8 bg-muted/20">
         {TABS.map((tab) => (
           <button
             key={tab}
             onClick={() => setBottomPanelTab(tab)}
             className={cn(
-              'px-3 py-1 text-xs capitalize font-medium rounded-sm transition-colors flex items-center gap-1',
+              'relative px-2.5 h-full text-xs capitalize font-medium transition-colors flex items-center gap-1.5',
               bottomPanelTab === tab
-                ? 'text-foreground bg-background border border-border'
+                ? 'text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-primary after:rounded-t'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
@@ -132,6 +136,21 @@ export function BottomPanel() {
 
         {/* Run / Stop button */}
         <div className="ml-auto flex items-center gap-2">
+          {/* Auto-fix agent toggle */}
+          <button
+            onClick={toggleAutoFix}
+            title={autoFixEnabled ? 'Auto-fix agent ON — fixes build errors automatically' : 'Auto-fix agent OFF'}
+            className={cn(
+              'flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors',
+              autoFixEnabled
+                ? 'bg-primary/15 text-primary border-primary/25'
+                : 'text-muted-foreground border-border hover:bg-muted'
+            )}
+          >
+            <Wrench className="w-3 h-3" />
+            Auto-fix {autoFixEnabled ? 'on' : 'off'}
+          </button>
+
           {previewPort && runState === 'running' && (
             <button
               onClick={togglePreview}
@@ -229,6 +248,8 @@ export function BottomPanel() {
                 projectId={currentProject.id}
                 autorun={autorun}
                 onPortDetected={handlePortDetected}
+                onBuildError={handleError}
+                onCompiled={notifyCompiled}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-xs text-muted-foreground">

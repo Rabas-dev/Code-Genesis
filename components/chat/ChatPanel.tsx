@@ -9,8 +9,9 @@ import { createClient } from '@/lib/supabase/client'
 import type { FileChange } from '@/app/api/chat/route'
 import type { ProjectFile } from '@/types'
 import {
-  Send, Bot, User, Loader2, X, RotateCcw,
+  Send, Bot, User, Loader2, X, Plus,
   FileCode2, Sparkles, CheckCircle2, AlertCircle,
+  ChevronDown, MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -22,6 +23,31 @@ interface Message {
   changes?: FileChange[]
   appliedCount?: number
   error?: boolean
+}
+
+interface ChatSession {
+  id: string
+  createdAt: number
+  messages: Message[]
+  title: string
+}
+
+function storageKey(projectId: string) {
+  return `cg-chat-${projectId}`
+}
+
+function loadSessions(projectId: string): ChatSession[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(localStorage.getItem(storageKey(projectId)) ?? '[]')
+  } catch { return [] }
+}
+
+function saveSessions(projectId: string, sessions: ChatSession[]) {
+  try {
+    // Keep only the last 20 sessions to avoid bloating localStorage
+    localStorage.setItem(storageKey(projectId), JSON.stringify(sessions.slice(-20)))
+  } catch {}
 }
 
 interface ChatPanelProps {
@@ -37,14 +63,54 @@ const STARTERS = [
 ]
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const { currentProject, setSelectedFile, selectedFile, setCurrentProject } = useIDEStore()
+  const projectId = currentProject?.id ?? 'default'
+
+  const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions(projectId))
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    const saved = loadSessions(projectId)
+    return saved.length > 0 ? saved[saved.length - 1].id : Date.now().toString()
+  })
+  const [showHistory, setShowHistory] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
   const { generatedFiles, addFile, bumpCodeVersion } = useGenerationStore()
-  const { currentProject, setSelectedFile, selectedFile, setCurrentProject } = useIDEStore()
+
+  const activeSession = sessions.find(s => s.id === activeSessionId)
+  const messages: Message[] = activeSession?.messages ?? []
+
+  const setMessages = useCallback((updater: Message[] | ((prev: Message[]) => Message[])) => {
+    setSessions(prev => {
+      const current = prev.find(s => s.id === activeSessionId)
+      const newMsgs = typeof updater === 'function'
+        ? updater(current?.messages ?? [])
+        : updater
+      const title = newMsgs.find(m => m.role === 'user')?.content.slice(0, 40) ?? 'New chat'
+      const updated: ChatSession = current
+        ? { ...current, messages: newMsgs, title }
+        : { id: activeSessionId, createdAt: Date.now(), messages: newMsgs, title }
+      const rest = prev.filter(s => s.id !== activeSessionId)
+      const next = [...rest, updated]
+      saveSessions(projectId, next)
+      return next
+    })
+  }, [activeSessionId, projectId])
+
+  // Start a fresh chat session
+  const handleNewChat = useCallback(() => {
+    const id = Date.now().toString()
+    setActiveSessionId(id)
+    setShowHistory(false)
+  }, [])
+
+  // Switch to an existing session
+  const handleSelectSession = useCallback((id: string) => {
+    setActiveSessionId(id)
+    setShowHistory(false)
+  }, [])
 
   const allFiles = generatedFiles.length > 0
     ? generatedFiles
@@ -184,7 +250,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   return (
     <div className="flex flex-col h-full bg-background border-l border-border">
       {/* Header */}
-      <div className="shrink-0 flex items-center gap-2.5 px-3 h-10 border-b border-border bg-muted/20">
+      <div className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-border bg-muted/20">
         <div className="w-5 h-5 rounded-md bg-violet-500/20 flex items-center justify-center">
           <Sparkles className="w-3 h-3 text-violet-400" />
         </div>
@@ -192,19 +258,62 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         <span className="text-[10px] text-emerald-400 font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
           Auto-apply
         </span>
-        {messages.length > 0 && (
-          <button
-            onClick={() => setMessages([])}
-            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Clear chat"
-          >
-            <RotateCcw className="w-3 h-3" />
-          </button>
-        )}
+        {/* Chat history toggle */}
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          title="Chat history"
+          className={cn(
+            'p-1 rounded hover:bg-muted transition-colors',
+            showHistory ? 'text-violet-400 bg-violet-500/10' : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+        </button>
+        {/* New chat */}
+        <button
+          onClick={handleNewChat}
+          title="New chat"
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
         <button onClick={onClose} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* History drawer */}
+      {showHistory && (
+        <div className="shrink-0 border-b border-border bg-muted/10 max-h-52 overflow-y-auto">
+          <div className="px-3 py-2 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">History</span>
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+            >
+              <Plus className="w-3 h-3" /> New chat
+            </button>
+          </div>
+          {sessions.length === 0 ? (
+            <p className="px-3 pb-3 text-xs text-muted-foreground/50">No previous chats</p>
+          ) : (
+            [...sessions].reverse().map(s => (
+              <button
+                key={s.id}
+                onClick={() => handleSelectSession(s.id)}
+                className={cn(
+                  'w-full text-left px-3 py-2 text-xs transition-colors hover:bg-muted/60 border-b border-border/30 last:border-0 flex items-center gap-2',
+                  s.id === activeSessionId ? 'bg-violet-500/10 text-violet-400' : 'text-muted-foreground'
+                )}
+              >
+                <MessageSquare className="w-3 h-3 shrink-0 opacity-50" />
+                <span className="truncate flex-1">{s.title}</span>
+                {s.id === activeSessionId && <ChevronDown className="w-3 h-3 shrink-0 opacity-50" />}
+              </button>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <ScrollArea className="flex-1 min-h-0">
@@ -315,18 +424,18 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
       {/* Input */}
       <div className="shrink-0 p-2 border-t border-border">
         <div className={cn(
-          'flex gap-2 items-end rounded-xl border bg-muted/20 transition-colors p-2',
+          'flex gap-2 items-end rounded-xl border bg-muted/20 transition-colors p-2.5',
           loading ? 'border-violet-500/30' : 'border-border focus-within:border-violet-500/40'
         )}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={loading ? 'Applying changes…' : 'Ask me to change anything… (Enter)'}
+            placeholder={loading ? 'Applying changes…' : 'Ask me to change anything… (Enter to send, Shift+Enter for new line)'}
             disabled={loading}
-            rows={1}
-            className="flex-1 bg-transparent text-xs resize-none focus:outline-none placeholder:text-muted-foreground/40 leading-relaxed max-h-32 overflow-y-auto disabled:opacity-50"
-            style={{ minHeight: '20px' }}
+            rows={3}
+            className="flex-1 bg-transparent text-xs resize-none focus:outline-none placeholder:text-muted-foreground/40 leading-relaxed max-h-40 overflow-y-auto disabled:opacity-50"
+            style={{ minHeight: '52px' }}
           />
           <button
             onClick={() => send(input)}

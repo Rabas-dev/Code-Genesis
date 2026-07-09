@@ -28,6 +28,7 @@ export function GitHubPushModal({
   const [isPrivate, setIsPrivate] = useState(false)
   const [pushState, setPushState] = useState<PushState>('idle')
   const [repoUrl, setRepoUrl] = useState('')
+  const [wasUpdated, setWasUpdated] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
@@ -80,6 +81,7 @@ export function GitHubPushModal({
       }
 
       setRepoUrl(data.repoUrl)
+      setWasUpdated(!!data.updated)
       setPushState('success')
     } catch {
       setErrorMsg('Network error — check your connection')
@@ -142,7 +144,7 @@ export function GitHubPushModal({
                 <CheckCircle2 className="w-7 h-7 text-emerald-400" />
               </div>
               <div>
-                <p className="font-semibold text-sm text-emerald-400">Repository created!</p>
+                <p className="font-semibold text-sm text-emerald-400">{wasUpdated ? 'Repository updated!' : 'Repository created!'}</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {files.length} files pushed successfully.
                 </p>

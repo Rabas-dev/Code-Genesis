@@ -3,10 +3,159 @@
 import { useState } from 'react'
 import type { ArchitectureResult } from '@/types'
 import { DiagramViewer } from './DiagramViewer'
-import { Loader2, Building2 } from 'lucide-react'
+import { Loader2, Building2, Key, Link2, Copy, Check, Database, ArrowRight } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useLLMStore } from '@/store/useLLMStore'
+
+// ── DB Schema Tab ─────────────────────────────────────────────────────────────
+
+type SchemaTable = ArchitectureResult['databaseSchema']['tables'][number]
+
+function buildDDL(tables: SchemaTable[]): string {
+  return tables.map((t) => {
+    const cols = t.columns.map((c) => {
+      const parts = [`  ${c.name} ${c.type}`]
+      if (c.primary) parts.push('PRIMARY KEY')
+      if (c.foreignKey) parts.push(`REFERENCES ${c.foreignKey}`)
+      return parts.join(' ')
+    }).join(',\n')
+    return `CREATE TABLE ${t.name} (\n${cols}\n);`
+  }).join('\n\n')
+}
+
+function DBSchemaTab({ tables }: { tables: SchemaTable[] }) {
+  const [copied, setCopied] = useState(false)
+
+  // Build a FK relationship map: table → [{from, to}]
+  const relationships: { fromTable: string; fromCol: string; toRef: string }[] = []
+  for (const t of tables) {
+    for (const col of t.columns) {
+      if (col.foreignKey) {
+        relationships.push({ fromTable: t.name, fromCol: col.name, toRef: col.foreignKey })
+      }
+    }
+  }
+
+  const handleCopySQL = () => {
+    const ddl = buildDDL(tables)
+    navigator.clipboard.writeText(ddl).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <ScrollArea className="h-full px-4 pb-4">
+      <div className="pt-3 space-y-4">
+
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Database className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {tables.length} {tables.length === 1 ? 'Table' : 'Tables'}
+            </span>
+          </div>
+          <button
+            onClick={handleCopySQL}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border hover:border-blue-500/40 hover:bg-blue-500/5 text-xs text-muted-foreground hover:text-blue-400 transition-all"
+          >
+            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+            {copied ? 'Copied!' : 'Copy SQL DDL'}
+          </button>
+        </div>
+
+        {/* Relationship legend */}
+        {relationships.length > 0 && (
+          <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Relationships</p>
+            {relationships.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="font-mono text-blue-400">{r.fromTable}</span>
+                <span className="font-mono text-muted-foreground">.{r.fromCol}</span>
+                <ArrowRight className="w-3 h-3 text-violet-400 shrink-0" />
+                <span className="font-mono text-violet-400">{r.toRef}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/20 text-violet-400 font-semibold">FK</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tables */}
+        {tables.map((table) => (
+          <div key={table.name} className="rounded-xl border border-border overflow-hidden">
+            {/* Table header */}
+            <div className="px-3 py-2.5 bg-gradient-to-r from-blue-500/10 to-transparent border-b border-border flex items-center gap-2">
+              <div className="w-5 h-5 rounded bg-blue-500/20 flex items-center justify-center shrink-0">
+                <Database className="w-3 h-3 text-blue-400" />
+              </div>
+              <p className="text-xs font-bold font-mono text-blue-400">{table.name}</p>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {table.columns.length} {table.columns.length === 1 ? 'column' : 'columns'}
+              </span>
+            </div>
+
+            {/* Columns */}
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-muted/10">
+                  <th className="text-left px-3 py-1.5 text-muted-foreground font-medium w-4" />
+                  <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Column</th>
+                  <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Type</th>
+                  <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Constraints</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.columns.map((col) => (
+                  <tr key={col.name} className="border-b border-border/40 last:border-0 hover:bg-muted/20 transition-colors">
+                    {/* Icon column */}
+                    <td className="px-3 py-2 w-4">
+                      {col.primary
+                        ? <Key className="w-3 h-3 text-amber-400" />
+                        : col.foreignKey
+                          ? <Link2 className="w-3 h-3 text-violet-400" />
+                          : null}
+                    </td>
+                    {/* Column name */}
+                    <td className={`px-3 py-2 font-mono ${col.primary ? 'text-amber-300 font-semibold' : col.foreignKey ? 'text-violet-300' : 'text-foreground'}`}>
+                      {col.name}
+                    </td>
+                    {/* Type */}
+                    <td className="px-3 py-2 text-blue-400 font-mono">{col.type}</td>
+                    {/* Constraint badges */}
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1 flex-wrap items-center">
+                        {col.primary && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/20 font-bold">PK</span>
+                        )}
+                        {col.foreignKey && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-violet-500/15 text-violet-400 border border-violet-500/20 font-bold">
+                            FK → {col.foreignKey}
+                          </span>
+                        )}
+                        {!col.primary && !col.foreignKey && (
+                          <span className="text-[10px] text-muted-foreground/50">—</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        {tables.length === 0 && (
+          <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center">
+            <Database className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No database tables defined</p>
+          </div>
+        )}
+      </div>
+    </ScrollArea>
+  )
+}
 
 const EXAMPLES = ['Uber clone', 'Airbnb clone', 'Twitter clone', 'SaaS dashboard', 'E-commerce store']
 
@@ -177,45 +326,7 @@ export function ArchitectPanel() {
 
         {/* DB Schema */}
         <TabsContent value="db" className="flex-1 min-h-0 m-0 overflow-hidden">
-          <ScrollArea className="h-full px-4 pb-4">
-            <div className="pt-3 space-y-4">
-              {output.databaseSchema.tables.map((table) => (
-                <div key={table.name} className="rounded-xl border border-border overflow-hidden">
-                  <div className="px-3 py-2 bg-muted/30 border-b border-border flex items-center gap-2">
-                    <span className="text-sm">🐘</span>
-                    <p className="text-xs font-bold font-mono">{table.name}</p>
-                  </div>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/10">
-                        <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Column</th>
-                        <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Type</th>
-                        <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Constraints</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {table.columns.map((col) => (
-                        <tr key={col.name} className="border-b border-border/50 last:border-0">
-                          <td className="px-3 py-2 font-mono text-foreground">{col.name}</td>
-                          <td className="px-3 py-2 text-blue-400 font-mono">{col.type}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex gap-1 flex-wrap">
-                              {col.primary && (
-                                <span className="px-1 py-0.5 rounded text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/20 font-semibold">PK</span>
-                              )}
-                              {col.foreignKey && (
-                                <span className="px-1 py-0.5 rounded text-[9px] bg-violet-500/15 text-violet-400 border border-violet-500/20 font-semibold">FK→{col.foreignKey}</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
+          <DBSchemaTab tables={output.databaseSchema.tables} />
         </TabsContent>
 
         {/* API Routes */}

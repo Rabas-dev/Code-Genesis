@@ -30,6 +30,12 @@ app/page.tsx
 <complete new file content here>
 \`\`\`
 
+PROJECT STACK (match it exactly — do NOT introduce other versions/tooling):
+- Next.js App Router (the \`app/\` directory). Keep \`metadata\` exports in Server Components; never add 'use client' to app/layout.tsx.
+- Tailwind CSS v3. The config already exists at \`tailwind.config.ts\` — EDIT that file, never create tailwind.config.js. Enable dark mode with \`darkMode: 'class'\` there.
+- Global styles live in \`app/globals.css\` using \`@tailwind base/components/utilities\`.
+- Before creating a file, check the provided project files — modify the existing one instead of creating a duplicate.
+
 RULES:
 - Every code block MUST be preceded by a filepath block showing the exact path
 - Always write complete file content — never partial
@@ -73,12 +79,14 @@ export async function POST(req: NextRequest) {
 
     const reply = await callLLM(systemWithContext, conversationText, providers)
 
-    // Parse all filepath+code block pairs
-    // Format: ```filepath\npath\n```\n```lang\ncontent\n```
+    // Parse all filepath+code block pairs. Tolerate BOTH formats the model may
+    // emit so changes always get applied (this is what makes the agent agentic):
+    //   proper:  ```filepath\nPATH\n```\n```lang\nCONTENT```
+    //   merged:  ```filepath\nPATH\n```lang\nCONTENT```   (fences merged — common)
+    const blockRegex = /```filepath\s*\n(.+?)\n```(?:\s*\n```)?[a-z]*\n([\s\S]*?)```/g
     const changes: FileChange[] = []
-    const filepathRegex = /```filepath\n(.+?)\n```\n```[a-z]*\n([\s\S]*?)```/g
     let match: RegExpExecArray | null
-    while ((match = filepathRegex.exec(reply)) !== null) {
+    while ((match = blockRegex.exec(reply)) !== null) {
       changes.push({
         path: match[1].trim(),
         content: match[2],
@@ -86,8 +94,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Strip code blocks from display text, keep prose
+    blockRegex.lastIndex = 0
     const displayReply = reply
-      .replace(/```filepath[\s\S]*?```\n```[a-z]*\n[\s\S]*?```/g, '')
+      .replace(blockRegex, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim()
 

@@ -5,6 +5,7 @@ import { useGenerationStore } from '@/store/useGenerationStore'
 import { X, Loader2 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { ProjectPlanCard } from '@/components/modes/generator/ProjectPlanCard'
+import { AutoFixFeed } from '@/components/autofix/AutoFixFeed'
 import { cn } from '@/lib/utils'
 
 const MODE_LABEL: Record<string, string> = {
@@ -22,7 +23,7 @@ export function RightPanel() {
     <div className="flex flex-col h-full w-full bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-9 border-b border-border shrink-0">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-muted-foreground">
           {isGenerating ? 'Generating' : (MODE_LABEL[activeMode] ?? 'Output')}
         </span>
         <button
@@ -38,8 +39,8 @@ export function RightPanel() {
           <div className="p-4 space-y-5">
             {/* Spinner + label */}
             <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0">
-                <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
               </div>
               <div>
                 <p className="text-xs font-medium">Building your project</p>
@@ -55,7 +56,7 @@ export function RightPanel() {
               </div>
               <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-violet-500 rounded-full transition-all duration-500"
+                  className="h-full bg-primary rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -73,6 +74,7 @@ export function RightPanel() {
           </div>
         ) : (
           <div className="p-3 space-y-3">
+            <AutoFixFeed />
             {activeMode === 'generator' && <ProjectPlanCard />}
             {activeMode === 'quality' && (
               <div className="rounded-lg border border-border p-4 text-center space-y-1.5">

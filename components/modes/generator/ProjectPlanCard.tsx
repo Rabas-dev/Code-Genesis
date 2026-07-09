@@ -66,9 +66,9 @@ export function ProjectPlanCard() {
 
       {/* Files count */}
       {allFiles.length > 0 && (
-        <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-            <FileCode2 className="w-4 h-4 text-violet-400" />
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+            <FileCode2 className="w-4 h-4 text-primary" />
           </div>
           <div>
             <p className="text-sm font-semibold">{allFiles.length} Files Generated</p>

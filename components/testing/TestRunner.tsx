@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import {
   Play, Square, RotateCcw, CheckCircle2, XCircle, AlertTriangle,
   Loader2, Camera, Globe, Zap, Server, ChevronDown, ChevronRight,
-  Info,
+  Info, ExternalLink, FileText, Download,
 } from 'lucide-react'
 import type { RouteResult, TestFinding } from '@/store/useTestStore'
 
@@ -37,9 +37,12 @@ function RouteRow({ result, onScreenshot }: { result: RouteResult; onScreenshot:
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
-      <button
-        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/30 transition-colors text-left"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/30 transition-colors text-left cursor-pointer"
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((o) => !o) } }}
       >
         {result.status === 'running' && <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin shrink-0" />}
         {result.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
@@ -72,7 +75,7 @@ function RouteRow({ result, onScreenshot }: { result: RouteResult; onScreenshot:
         {result.findings.length > 0
           ? (open ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />)
           : null}
-      </button>
+      </div>
 
       {open && result.findings.length > 0 && (
         <div className="border-t border-border bg-muted/10 divide-y divide-border/40">
@@ -91,7 +94,7 @@ function RouteRow({ result, onScreenshot }: { result: RouteResult; onScreenshot:
 export function TestRunner() {
   const {
     isRunning, overallScore, routeResults, apiResults,
-    fixes, logs, currentRoute, iteration, clearResults, startTest, stopTest,
+    fixes, logs, report, currentRoute, iteration, clearResults, startTest, stopTest,
   } = useTestStore()
   const { currentProject, previewPort } = useIDEStore()
   const [screenshot, setScreenshot] = useState<{ src: string; route: string } | null>(null)
@@ -102,12 +105,25 @@ export function TestRunner() {
   const passCount = routeResults.filter((r) => r.status === 'pass').length
   const failCount = routeResults.filter((r) => r.status === 'fail' || r.status === 'error').length
 
-  const canTest = !!currentProject && !!previewPort
+  // Static analysis needs only the saved files — no running dev server required.
+  const canTest = !!currentProject
   const port = previewPort ?? 3001
 
   const handleRun = () => {
     if (!currentProject) return
     startTest(currentProject.id, port)
+  }
+
+  const downloadReport = () => {
+    if (!report) return
+    const name = (currentProject?.name ?? 'project').replace(/\s+/g, '-').toLowerCase()
+    const blob = new Blob([`# Test & Quality Report — ${currentProject?.name ?? 'Project'}\n\n${report}\n`], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}-test-report.md`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -136,8 +152,30 @@ export function TestRunner() {
           </button>
         )}
 
+        {previewPort && (
+          <button
+            onClick={() => window.open(`http://localhost:${previewPort}`, '_blank', 'noopener,noreferrer')}
+            title={`Open preview in a new tab (localhost:${previewPort})`}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors press"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Open preview
+          </button>
+        )}
+
         {!canTest && !isRunning && (
-          <span className="text-[10px] text-muted-foreground/60">Click Run in terminal first to start the preview</span>
+          <span className="text-[10px] text-muted-foreground/60">Open a generated project first</span>
+        )}
+
+        {report && !isRunning && (
+          <button
+            onClick={downloadReport}
+            title="Download the report as Markdown"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors press"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Report
+          </button>
         )}
 
         {(overallScore !== null) && <ScoreBadge score={overallScore} />}
@@ -167,7 +205,7 @@ export function TestRunner() {
               {showLogs ? 'Hide' : 'Logs'} ({logs.length})
             </button>
           )}
-          {(routeResults.length > 0 || fixes.length > 0) && !isRunning && (
+          {(routeResults.length > 0 || fixes.length > 0 || !!report) && !isRunning && (
             <button onClick={clearResults} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Clear">
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
@@ -179,19 +217,19 @@ export function TestRunner() {
         <div className="p-3 space-y-4">
 
           {/* Empty state */}
-          {!isRunning && routeResults.length === 0 && fixes.length === 0 && (
+          {!isRunning && routeResults.length === 0 && fixes.length === 0 && !report && (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
               <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
                 <Play className="w-5 h-5 text-violet-400" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium">Agentic Test Runner</p>
+                <p className="text-sm font-medium">Test &amp; Quality Report</p>
                 <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
-                  Starts your app, crawls every route with Playwright, runs AI vision analysis, and auto-generates fixes.
+                  Statically analyzes every file and produces a documented quality report — fast, lightweight, no browser required.
                 </p>
               </div>
               <div className="flex flex-col gap-1 text-[11px] text-muted-foreground/60 text-left w-full max-w-xs">
-                {['Browser automation (Playwright)', 'AI vision screenshot analysis', 'Console error detection', 'Automatic code fix generation'].map((s) => (
+                {['Static code analysis', 'Security & best-practice checks', 'Route & API discovery', 'AI-written documented report'].map((s) => (
                   <div key={s} className="flex items-center gap-1.5">
                     <CheckCircle2 className="w-3 h-3 text-emerald-500/60 shrink-0" />
                     {s}
@@ -208,12 +246,34 @@ export function TestRunner() {
             </div>
           )}
 
+          {/* Documented report */}
+          {report && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  <FileText className="w-3 h-3 text-violet-400" />
+                  Documented Report
+                </div>
+                <button
+                  onClick={downloadReport}
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-muted transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  .md
+                </button>
+              </div>
+              <div className="rounded-lg border border-border bg-card p-3 text-xs leading-relaxed text-foreground/85 whitespace-pre-wrap font-mono max-h-[420px] overflow-y-auto">
+                {report}
+              </div>
+            </div>
+          )}
+
           {/* Route results */}
           {routeResults.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                 <Globe className="w-3 h-3" />
-                Page Tests
+                File Checks
               </div>
               <div className="space-y-1.5">
                 {routeResults.map((r) => (

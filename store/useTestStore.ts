@@ -37,6 +37,7 @@ interface TestState {
   fixes: CodeFix[]
   appliedFixes: Set<string>
   logs: string[]
+  report: string | null
   currentRoute: string | null
   eventSource: EventSource | null
 }
@@ -53,6 +54,7 @@ interface TestActions {
   _addFix: (fix: CodeFix) => void
   _addApiResult: (result: ApiResult) => void
   _setScore: (score: number) => void
+  _setReport: (report: string) => void
   _setCurrentRoute: (route: string | null) => void
   _setIteration: (n: number) => void
 }
@@ -66,6 +68,7 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
   fixes: [],
   appliedFixes: new Set(),
   logs: [],
+  report: null,
   currentRoute: null,
   eventSource: null,
 
@@ -81,6 +84,7 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
       fixes: [],
       appliedFixes: new Set(),
       logs: [],
+      report: null,
       currentRoute: null,
     })
 
@@ -100,20 +104,25 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
             store._setCurrentRoute(msg.route)
             store._setRouteStatus(msg.route, { route: msg.route, status: 'running', findings: [] })
             break
-          case 'route-result':
+          case 'route-result': {
+            // Findings stream in BEFORE this event — don't reset them, and don't
+            // downgrade a route to 'pass' if a critical finding already failed it.
+            const existing = store.routeResults.find((r) => r.route === msg.route)
+            const hasCritical = existing?.findings.some((f) => f.severity === 'critical')
             store._setRouteStatus(msg.route, {
-              status: msg.status,
+              status: msg.status === 'pass' && hasCritical ? 'fail' : msg.status,
               loadTimeMs: msg.loadTimeMs,
               screenshot: msg.screenshot,
-              findings: [],
               visualScore: msg.visualScore,
             })
             break
+          }
           case 'finding':
             store._addFinding(msg.finding)
-            store._setRouteStatus(msg.finding.route, {
-              status: msg.finding.severity === 'critical' ? 'fail' : 'fail',
-            })
+            // Only a critical finding fails a route; warnings/info stay informational.
+            if (msg.finding.severity === 'critical') {
+              store._setRouteStatus(msg.finding.route, { status: 'fail' })
+            }
             break
           case 'api-result':
             store._addApiResult(msg.result)
@@ -123,6 +132,9 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
             break
           case 'score':
             store._setScore(msg.score)
+            break
+          case 'report':
+            store._setReport(msg.report)
             break
           case 'iteration':
             store._setIteration(msg.n)
@@ -171,6 +183,7 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
     fixes: [],
     appliedFixes: new Set(),
     logs: [],
+    report: null,
     currentRoute: null,
     iteration: 0,
   }),
@@ -183,6 +196,7 @@ export const useTestStore = create<TestState & TestActions>((set, get) => ({
   _setCurrentRoute: (route) => set({ currentRoute: route }),
   _setIteration: (n) => set({ iteration: n }),
   _setScore: (score) => set({ overallScore: score }),
+  _setReport: (report) => set({ report }),
 
   _setRouteStatus: (route, update) => set((s) => {
     const existing = s.routeResults.find((r) => r.route === route)

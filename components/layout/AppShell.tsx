@@ -133,14 +133,14 @@ function PreviewPanel({ port }: { port: number }) {
       {/* iframe */}
       <div className="flex-1 relative bg-white">
         {status === 'connecting' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-950 z-10">
-            <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background z-10">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <span className="text-xs text-muted-foreground">Compiling your app…</span>
             <span className="text-[10px] text-muted-foreground/50">This takes ~5 seconds on first load</span>
           </div>
         )}
         {status === 'error' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-950 z-10">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background z-10">
             <X className="w-6 h-6 text-red-400" />
             <span className="text-xs text-muted-foreground">Server stopped — check the terminal for errors</span>
             <button onClick={() => { setStatus('connecting'); window.dispatchEvent(new CustomEvent('preview-retry')) }} className="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-xs font-medium transition-colors">

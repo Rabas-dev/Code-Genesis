@@ -50,7 +50,7 @@ export function Sidebar({ project }: SidebarProps) {
     <div className="flex flex-col h-full w-full bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-9 border-b border-border shrink-0">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-muted-foreground">
           Explorer
         </span>
         <button
@@ -83,7 +83,7 @@ export function Sidebar({ project }: SidebarProps) {
       {/* Prompt snippet */}
       {activeProject?.prompt && (
         <div className="shrink-0 border-t border-border px-3 py-2.5">
-          <p className="text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-1">Prompt</p>
+          <p className="text-[10px] text-muted-foreground/60 font-medium mb-1">Prompt</p>
           <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-mono">
             {activeProject.prompt}
           </p>

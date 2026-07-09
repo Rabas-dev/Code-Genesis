@@ -6,12 +6,20 @@ export type { ProviderConfig }
 
 const DEFAULT_PROVIDERS: ProviderConfig[] = [
   {
+    id: 'openrouter',
+    name: 'openrouter',
+    apiKey: '',
+    model: 'qwen/qwen3-coder',
+    enabled: true,
+    priority: 1,
+  },
+  {
     id: 'groq',
     name: 'groq',
     apiKey: '',
     model: 'llama-3.3-70b-versatile',
     enabled: true,
-    priority: 1,
+    priority: 2,
   },
   {
     id: 'openai',
@@ -19,7 +27,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     apiKey: '',
     model: 'gpt-4o-mini',
     enabled: false,
-    priority: 2,
+    priority: 3,
   },
   {
     id: 'anthropic',
@@ -27,7 +35,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     apiKey: '',
     model: 'claude-haiku-4-5-20251001',
     enabled: false,
-    priority: 3,
+    priority: 4,
   },
   {
     id: 'gemini',
@@ -35,7 +43,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     apiKey: '',
     model: 'gemini-2.5-flash',
     enabled: false,
-    priority: 4,
+    priority: 5,
   },
 ]
 
@@ -44,6 +52,7 @@ export const PROVIDER_MODELS: Record<ProviderConfig['name'], string[]> = {
   openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-7'],
   gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+  openrouter: ['qwen/qwen3-coder', 'z-ai/glm-4.6', 'deepseek/deepseek-chat', 'deepseek/deepseek-r1', 'moonshotai/kimi-k2', 'qwen/qwen-2.5-coder-32b-instruct', 'minimax/minimax-m2'],
 }
 
 export const PROVIDER_META: Record<
@@ -77,6 +86,13 @@ export const PROVIDER_META: Record<
     docsUrl: 'https://aistudio.google.com/app/apikey',
     keyPlaceholder: 'AIza...',
     color: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    emoji: '🔀',
+    docsUrl: 'https://openrouter.ai/keys',
+    keyPlaceholder: 'sk-or-...',
+    color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
   },
 }
 
@@ -130,8 +146,24 @@ export const useLLMStore = create<LLMState & LLMActions>()(
     }),
     {
       name: 'code-genesis-llm-config',
+      // Bump when the default provider chain changes so existing users get it.
+      version: 2,
       // Only persist provider configs, not UI state
       partialize: (s) => ({ providers: s.providers }),
+      // v1 → v2: OpenRouter + Qwen3-Coder becomes the primary provider. Rebuild
+      // from the new defaults (so the chain/ordering updates everywhere) but
+      // carry over any API keys the user already entered.
+      migrate: (persisted, version) => {
+        const old = (persisted as { providers?: ProviderConfig[] })?.providers ?? []
+        const savedKey = (name: ProviderConfig['name']) =>
+          old.find((p) => p.name === name)?.apiKey ?? ''
+        return {
+          providers: DEFAULT_PROVIDERS.map((p) => ({
+            ...p,
+            apiKey: savedKey(p.name) || p.apiKey,
+          })),
+        } as { providers: ProviderConfig[] }
+      },
       // Migrate away from decommissioned/invalid models saved in localStorage
       onRehydrateStorage: () => (state) => {
         if (!state) return

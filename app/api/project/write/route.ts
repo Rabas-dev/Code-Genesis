@@ -3,6 +3,71 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
+// ── Local import repair + missing-file stubs ──────────────────────────────────
+// The LLM sometimes (a) imports a local file it forgot to generate, or
+// (b) writes a relative path with the wrong depth (e.g. `../../data/x.json`
+// from a root-level `components/` file, which escapes the project). Both break
+// the build. This pass repairs over-deep paths and stubs missing data files.
+
+const RESOLVE_EXTS = ['', '.tsx', '.ts', '.jsx', '.js', '.json', '.css', '/index.tsx', '/index.ts', '/index.js']
+
+function resolves(target: string, generated: Set<string>): boolean {
+  return RESOLVE_EXTS.some((ext) => generated.has(target + ext))
+}
+
+function stubFor(p: string): string | null {
+  if (p.endsWith('.json')) return '[]\n'              // safest default for data imports
+  if (p.endsWith('.css')) return '/* auto-generated stub */\n'
+  return null                                          // don't stub code modules (named exports unknown)
+}
+
+// Returns possibly-rewritten content + any stub files that must be created.
+function repairLocalImports(
+  content: string,
+  filePath: string,
+  generated: Set<string>,
+): { content: string; stubs: { path: string; content: string }[] } {
+  const ext = path.extname(filePath)
+  if (!['.tsx', '.jsx', '.ts', '.js'].includes(ext)) return { content, stubs: [] }
+
+  const dir = path.posix.dirname(filePath.replace(/^\//, ''))
+  const stubs: { path: string; content: string }[] = []
+  let out = content
+
+  const importRe = /(from\s+|import\s+|require\(\s*)(['"])(\.[^'"]+)\2/g
+  out = out.replace(importRe, (full, kw, quote, spec) => {
+    let resolved = path.posix.normalize(path.posix.join(dir, spec))
+
+    // (a) Repair over-deep paths that escape the project root by trimming `../`
+    if (resolved.startsWith('..')) {
+      let trimmed = spec
+      for (let i = 0; i < 3 && trimmed.startsWith('../'); i++) {
+        trimmed = trimmed.replace('../', '')
+        const candidate = path.posix.normalize(path.posix.join(dir, trimmed))
+        if (!candidate.startsWith('..') && (resolves(candidate, generated) || stubFor(candidate))) {
+          spec = trimmed
+          resolved = candidate
+          break
+        }
+      }
+    }
+
+    if (resolved.startsWith('..')) return full // still escapes — leave it, prompt handles it
+
+    // (b) Missing file → stub it if it's a data/style import
+    if (!resolves(resolved, generated)) {
+      const stub = stubFor(resolved)
+      if (stub) {
+        stubs.push({ path: resolved, content: stub })
+        generated.add(resolved)
+      }
+    }
+    return `${kw}${quote}${spec}${quote}`
+  })
+
+  return { content: out, stubs }
+}
+
 // ── 'use client' auto-injection ───────────────────────────────────────────────
 const CLIENT_HOOKS = [
   'useState', 'useEffect', 'useRef', 'useCallback', 'useMemo',
@@ -108,27 +173,45 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Set of all generated paths — used to detect missing local imports
+    const generatedPaths = new Set(
+      (files as { path: string }[]).map((f) => f.path.replace(/^\//, ''))
+    )
+
     // Second pass — write files with auto-fixes
     let clientFixed = 0
+    const stubFiles = new Map<string, string>()
     for (const file of files as { path: string; content: string }[]) {
       const filePath = path.join(projectDir, file.path.replace(/^\//, ''))
       fs.mkdirSync(path.dirname(filePath), { recursive: true })
-      const patched = ensureClientDirective(file.content, file.path)
+
+      // Repair broken relative imports + collect any data/style stubs to create
+      const { content: repaired, stubs } = repairLocalImports(file.content, file.path, generatedPaths)
+      for (const s of stubs) if (!stubFiles.has(s.path)) stubFiles.set(s.path, s.content)
+
+      const patched = ensureClientDirective(repaired, file.path)
       if (patched !== file.content) clientFixed++
       fs.writeFileSync(filePath, patched, 'utf-8')
+    }
+
+    // Create any missing data/style stub files referenced by imports
+    for (const [p, content] of stubFiles) {
+      const fp = path.join(projectDir, p)
+      fs.mkdirSync(path.dirname(fp), { recursive: true })
+      if (!fs.existsSync(fp)) fs.writeFileSync(fp, content, 'utf-8')
     }
 
     // Patch package.json with any missing external packages
     patchPackageJson(projectDir, Array.from(allExternalPackages))
 
-    if (clientFixed > 0) {
-      console.log(`[/api/project/write] Auto-added 'use client' to ${clientFixed} file(s)`)
-    }
+    if (clientFixed > 0) console.log(`[/api/project/write] Auto-added 'use client' to ${clientFixed} file(s)`)
+    if (stubFiles.size > 0) console.log(`[/api/project/write] Created ${stubFiles.size} stub(s): ${[...stubFiles.keys()].join(', ')}`)
 
     return NextResponse.json({
       ok: true, dir: projectDir,
       count: files.length,
       clientFixed,
+      stubs: [...stubFiles.keys()],
       extraPackages: Array.from(allExternalPackages),
     })
   } catch (err) {

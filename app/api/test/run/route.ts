@@ -1,22 +1,102 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { testRoutesInWorker, testApiRoutes, discoverRoutes, waitForServer, closeBrowser } from '@/lib/testing/agent'
-import { analyzeScreenshotWithVision } from '@/lib/testing/vision'
-import { generateMultipleFixes } from '@/lib/testing/fixer'
+import { callLLM } from '@/lib/ai/providers/llm-router'
 import type { TestFinding } from '@/store/useTestStore'
 import type { ProjectFile } from '@/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
+// ── Lightweight, crash-free testing ──────────────────────────────────────────
+// No browser, no Playwright, no Chromium — those were the memory hogs that got
+// the server SIGKILL'd. Instead we statically analyze the generated files
+// (already in the DB) and ask the model for a documented quality report.
+
+interface SimpleFinding {
+  file: string
+  severity: TestFinding['severity']
+  category: TestFinding['category']
+  description: string
+}
+
+// Each rule scans one file's content and returns any issues it finds.
+function analyzeFile(path: string, content: string): SimpleFinding[] {
+  const out: SimpleFinding[] = []
+  const add = (severity: SimpleFinding['severity'], category: SimpleFinding['category'], description: string) =>
+    out.push({ file: path, severity, category, description })
+
+  const isComponent = /\.(tsx|jsx)$/.test(path)
+  const trimmed = content.trim()
+
+  // Empty / stub file
+  if (trimmed.length < 10) {
+    add('warning', 'console-error', 'File is empty or a stub — no implementation')
+    return out
+  }
+
+  // Hardcoded secrets / API keys
+  if (/(sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z\-_]{20,}|ghp_[A-Za-z0-9]{20,})/.test(content)) {
+    add('critical', 'api', 'Possible hardcoded secret/API key — move it to an environment variable')
+  }
+
+  // Client hooks without the "use client" directive (runtime error in App Router)
+  if (isComponent && /\b(useState|useEffect|useRef|useContext|useReducer)\s*\(/.test(content) && !/['"]use client['"]/.test(content)) {
+    add('critical', 'console-error', 'Uses React hooks but is missing the "use client" directive')
+  }
+
+  // XSS risk
+  if (/dangerouslySetInnerHTML/.test(content)) {
+    add('warning', 'a11y', 'Uses dangerouslySetInnerHTML — verify the content is sanitized (XSS risk)')
+  }
+
+  // Raw <img> instead of next/image
+  if (isComponent && /<img\s/.test(content)) {
+    add('info', 'visual', 'Uses a raw <img> tag — consider next/image for optimization')
+  }
+
+  // Leftover debug logs
+  if (/console\.(log|debug)\s*\(/.test(content)) {
+    add('info', 'console-error', 'Contains console.log/debug statements — remove before shipping')
+  }
+
+  // Loose typing
+  if (/:\s*any\b|<any>/.test(content)) {
+    add('info', 'console-error', 'Uses the "any" type — tighten typing for safety')
+  }
+
+  // Unfinished work
+  if (/\b(TODO|FIXME)\b/.test(content)) {
+    add('info', 'console-error', 'Contains TODO/FIXME markers — unfinished work')
+  }
+
+  return out
+}
+
+function discoverRoutes(files: ProjectFile[]): string[] {
+  const routes = new Set<string>()
+  for (const f of files) {
+    const p = f.path.replace(/^\//, '')
+    if (p.startsWith('app/') && /\/page\.(tsx|jsx)$/.test(p)) {
+      const r = '/' + p.replace('app/', '').replace(/\/page\.(tsx|jsx)$/, '')
+      if (!r.includes('[')) routes.add(r || '/')
+    }
+    if (p === 'app/page.tsx' || p === 'app/page.jsx') routes.add('/')
+  }
+  return Array.from(routes).sort()
+}
+
+function discoverApiRoutes(files: ProjectFile[]): string[] {
+  return files
+    .map((f) => f.path.replace(/^\//, ''))
+    .filter((p) => p.startsWith('app/api/') && /route\.(ts|js)$/.test(p))
+    .map((p) => '/' + p.replace('app/', '').replace(/\/route\.(ts|js)$/, ''))
+    .sort()
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const projectId = searchParams.get('projectId')
-  const port = parseInt(searchParams.get('port') ?? '3001', 10)
-
-  if (!projectId) {
-    return new Response('Missing projectId', { status: 400 })
-  }
+  if (!projectId) return new Response('Missing projectId', { status: 400 })
 
   const encoder = new TextEncoder()
   let isClosed = false
@@ -25,15 +105,13 @@ export async function GET(req: NextRequest) {
     async start(controller) {
       const send = (data: object) => {
         if (isClosed) return
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        } catch { isClosed = true }
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) }
+        catch { isClosed = true }
       }
-
       const log = (message: string) => send({ type: 'log', message })
 
       try {
-        // Load project files from Supabase
+        // ── Load files ────────────────────────────────────────────────────────
         log('Loading project files…')
         const supabase = await createClient()
         const { data: fileRows } = await supabase
@@ -48,209 +126,104 @@ export async function GET(req: NextRequest) {
         }
 
         const files: ProjectFile[] = fileRows.map((f) => ({
-          id: f.id,
-          path: f.path,
-          content: f.content,
-          language: f.language,
+          id: f.id, path: f.path, content: f.content, language: f.language,
         }))
 
         const { data: projectRow } = await supabase
-          .from('projects')
-          .select('name, prompt')
-          .eq('id', projectId)
-          .single()
+          .from('projects').select('name, prompt').eq('id', projectId).single()
+        const projectName = projectRow?.name ?? 'Generated app'
+        const projectPrompt = projectRow?.prompt ?? ''
 
-        const projectContext = projectRow
-          ? `${projectRow.name}: ${projectRow.prompt}`
-          : 'Generated Next.js app'
+        // ── Static analysis ───────────────────────────────────────────────────
+        const sourceFiles = files.filter((f) => /\.(tsx|ts|jsx|js)$/.test(f.path))
+        log(`Analyzing ${sourceFiles.length} source file(s)…`)
 
-        const baseUrl = `http://localhost:${port}`
-
-        // ── PHASE 1: Wait for server ──────────────────────────────────────────
-        log(`Waiting for dev server at ${baseUrl}…`)
-        const serverReady = await waitForServer(baseUrl, 45000)
-        if (!serverReady) {
-          send({ type: 'error', message: `Dev server not responding at ${baseUrl}. Click Run first.` })
-          controller.close()
-          return
-        }
-        log('✓ Dev server is up')
-
-        // ── PHASE 2: Discover routes ──────────────────────────────────────────
-        const MAX_ROUTES = 8 // cap to keep memory/time bounded
-        const allRoutes = discoverRoutes(files)
-        const routes = allRoutes.slice(0, MAX_ROUTES)
-        log(`Discovered ${allRoutes.length} route(s)${allRoutes.length > MAX_ROUTES ? ` (testing first ${MAX_ROUTES})` : ''}: ${routes.join(', ')}`)
-
+        let seq = 0
         const allFindings: TestFinding[] = []
-        let totalScore = 0
-        let scoredRoutes = 0
 
-        // ── PHASE 3: Test each route (in an isolated child process) ───────────
-        // Announce all routes up front so the UI shows them queued
-        routes.forEach((r) => send({ type: 'route-start', route: r }))
-        log('Launching browser in isolated process…')
-
-        for await (const result of testRoutesInWorker(baseUrl, routes)) {
+        for (const f of sourceFiles) {
           if (isClosed) break
-          const route = result.route
-          log(`Tested ${route} — ${result.status}`)
-
-          const routeFindings: TestFinding[] = []
-
-          // Console errors → findings
-          for (const err of result.consoleErrors) {
+          send({ type: 'route-start', route: f.path })
+          const issues = analyzeFile(f.path, f.content)
+          for (const iss of issues) {
             const finding: TestFinding = {
-              id: `${route}-console-${Date.now()}`,
-              route,
-              severity: 'critical',
-              category: 'console-error',
-              description: err,
-              screenshot: result.screenshot ?? undefined,
+              id: `${iss.file}-${seq++}`,
+              route: iss.file,
+              severity: iss.severity,
+              category: iss.category,
+              description: iss.description,
             }
-            routeFindings.push(finding)
             allFindings.push(finding)
             send({ type: 'finding', finding })
           }
-
-          // Network errors → findings
-          for (const err of result.networkErrors.slice(0, 3)) {
-            const finding: TestFinding = {
-              id: `${route}-net-${Date.now()}`,
-              route,
-              severity: 'warning',
-              category: 'network',
-              description: err,
-            }
-            routeFindings.push(finding)
-            allFindings.push(finding)
-            send({ type: 'finding', finding })
-          }
-
-          // Broken links → findings
-          for (const link of result.brokenLinks) {
-            const finding: TestFinding = {
-              id: `${route}-link-${Date.now()}`,
-              route,
-              severity: 'warning',
-              category: 'broken-link',
-              description: `Broken link: ${link}`,
-            }
-            routeFindings.push(finding)
-            allFindings.push(finding)
-            send({ type: 'finding', finding })
-          }
-
-          // No content → finding
-          if (!result.hasContent) {
-            const finding: TestFinding = {
-              id: `${route}-empty-${Date.now()}`,
-              route,
-              severity: 'critical',
-              category: 'visual',
-              description: 'Page appears empty — no visible content',
-              screenshot: result.screenshot ?? undefined,
-            }
-            routeFindings.push(finding)
-            allFindings.push(finding)
-            send({ type: 'finding', finding })
-          }
-
-          // Vision analysis if we have a screenshot
-          let visualScore = 80
-          if (result.screenshot) {
-            log(`Running AI vision analysis on ${route}…`)
-            try {
-              const vision = await analyzeScreenshotWithVision(
-                result.screenshot,
-                route,
-                projectContext,
-              )
-              visualScore = vision.score
-              totalScore += vision.score
-              scoredRoutes++
-
-              for (const issue of vision.issues) {
-                const finding: TestFinding = {
-                  id: `${route}-visual-${Date.now()}-${Math.random()}`,
-                  route,
-                  severity: issue.severity as TestFinding['severity'],
-                  category: 'visual',
-                  description: issue.description,
-                  screenshot: result.screenshot ?? undefined,
-                }
-                allFindings.push(finding)
-                send({ type: 'finding', finding })
-              }
-            } catch { /* vision failed — skip */ }
-          }
-
-          send({
-            type: 'route-result',
-            route,
-            status: result.status,
-            loadTimeMs: result.loadTimeMs,
-            screenshot: result.screenshot,
-            visualScore,
-          })
+          const hasCritical = issues.some((i) => i.severity === 'critical')
+          send({ type: 'route-result', route: f.path, status: hasCritical ? 'fail' : 'pass', loadTimeMs: 0 })
         }
 
-        // ── PHASE 4: API health check ─────────────────────────────────────────
-        log('Checking API routes…')
-        const apiResults = await testApiRoutes(baseUrl, files)
-        for (const r of apiResults) {
-          send({ type: 'api-result', result: r })
-          if (!r.ok && r.status !== 401) {
-            const finding: TestFinding = {
-              id: `api-${r.route}-${Date.now()}`,
-              route: r.route,
-              severity: r.status >= 500 ? 'critical' : 'warning',
-              category: 'api',
-              description: `API ${r.route} returned ${r.status || 'network error'}${r.error ? ': ' + r.error : ''}`,
-            }
-            allFindings.push(finding)
-            send({ type: 'finding', finding })
-          }
+        const routes = discoverRoutes(files)
+        const apiRoutes = discoverApiRoutes(files)
+        log(`Found ${routes.length} page route(s) and ${apiRoutes.length} API route(s)`)
+
+        // ── Score ─────────────────────────────────────────────────────────────
+        const critical = allFindings.filter((f) => f.severity === 'critical').length
+        const warning = allFindings.filter((f) => f.severity === 'warning').length
+        const info = allFindings.filter((f) => f.severity === 'info').length
+        const score = Math.max(0, 100 - critical * 15 - warning * 5 - info * 1)
+        send({ type: 'score', score })
+
+        // ── Documented report (Qwen) ──────────────────────────────────────────
+        log('Generating documented report…')
+        const findingsSummary = allFindings.length
+          ? allFindings.map((f) => `- [${f.severity}] ${f.route}: ${f.description}`).join('\n')
+          : '- No static issues detected.'
+
+        const SYSTEM = `You are a senior QA engineer. Write a concise, well-structured TEST & QUALITY REPORT in GitHub-flavored Markdown. Use these sections with ## headings: Overview, Routes, Issues Found, Recommendations, Verdict. Be specific and practical. Do not invent issues beyond what is provided. Keep it under ~400 words.`
+        const userPrompt = `Project: ${projectName}
+Description: ${projectPrompt}
+Page routes (${routes.length}): ${routes.join(', ') || 'none'}
+API routes (${apiRoutes.length}): ${apiRoutes.join(', ') || 'none'}
+Source files analyzed: ${sourceFiles.length}
+Quality score: ${score}/100 (critical: ${critical}, warnings: ${warning}, info: ${info})
+
+Static analysis findings:
+${findingsSummary}
+
+Write the report now.`
+
+        let report: string
+        try {
+          report = await callLLM(SYSTEM, userPrompt)
+        } catch {
+          // Fallback report if the model is unavailable — still crash-free.
+          report = `## Overview
+**${projectName}** — quality score **${score}/100**.
+
+## Routes
+- Page routes (${routes.length}): ${routes.join(', ') || 'none'}
+- API routes (${apiRoutes.length}): ${apiRoutes.join(', ') || 'none'}
+
+## Issues Found
+${findingsSummary}
+
+## Recommendations
+Address critical issues first, then warnings. Remove debug logs and tighten typing.
+
+## Verdict
+${score >= 80 ? 'Good — minor polish needed.' : score >= 60 ? 'Fair — several issues to resolve.' : 'Needs work — resolve the critical issues before shipping.'}`
         }
 
-        // ── PHASE 5: Calculate overall score ──────────────────────────────────
-        const baseScore = scoredRoutes > 0 ? totalScore / scoredRoutes : 80
-        const penaltyPerCritical = 15
-        const penaltyPerWarning = 5
-        const criticals = allFindings.filter((f) => f.severity === 'critical').length
-        const warnings = allFindings.filter((f) => f.severity === 'warning').length
-        const finalScore = Math.max(0, Math.round(baseScore - criticals * penaltyPerCritical - warnings * penaltyPerWarning))
-        send({ type: 'score', score: finalScore })
-
-        // ── PHASE 6: AI Fix generation ────────────────────────────────────────
-        const issueCount = allFindings.filter((f) => f.severity !== 'info').length
-        if (issueCount > 0) {
-          log(`Generating AI fixes for ${issueCount} issue(s)…`)
-          send({ type: 'iteration', n: 1 })
-
-          const fixes = await generateMultipleFixes(allFindings, files, projectContext)
-          for (const fix of fixes) {
-            log(`Fix ready: ${fix.filePath}`)
-            send({ type: 'fix', fix })
-          }
-        } else {
-          log('No issues found — no fixes needed')
-        }
-
-        log(`Done. Score: ${finalScore}/100`)
-        send({ type: 'complete', score: finalScore })
+        send({ type: 'report', report })
+        log(`Done. Score: ${score}/100`)
+        send({ type: 'complete', score })
       } catch (err) {
         send({ type: 'error', message: String(err) })
       } finally {
-        await closeBrowser().catch(() => {})
         if (!isClosed) {
           try { controller.close() } catch { /* already closed */ }
         }
       }
     },
-    cancel() {
-      isClosed = true
-    },
+    cancel() { isClosed = true },
   })
 
   return new Response(stream, {

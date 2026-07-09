@@ -26,6 +26,9 @@ interface GenerationState {
   // Increments whenever project code changes (chat edit, manual save) — used
   // by the Quality panel to auto-rescore.
   codeVersion: number
+  // Generation metrics
+  generationStartMs: number | null
+  generationDurationMs: number | null
 }
 
 interface GenerationActions {
@@ -60,6 +63,8 @@ const INITIAL_STATE: GenerationState = {
   wireframeDoc: null,
   logs: [],
   codeVersion: 0,
+  generationStartMs: null,
+  generationDurationMs: null,
 }
 
 function getProviders() {
@@ -108,7 +113,7 @@ export const useGenerationStore = create<GenerationState & GenerationActions>((s
       set({ requirementsDoc: doc, status: 'idle', progress: 25, sdlcPhase: 0, currentStep: '' })
     } catch {
       log('ERROR: Requirements analysis failed')
-      set({ status: 'failed', currentStep: 'Failed to analyze requirements. Try again.' })
+      set({ status: 'failed', sdlcStep: 'prompt', currentStep: 'Failed to analyze requirements. Try again.' })
     }
   },
 
@@ -137,7 +142,9 @@ export const useGenerationStore = create<GenerationState & GenerationActions>((s
       set({ architectureDoc: doc, status: 'idle', progress: 50, currentStep: '' })
     } catch {
       log('ERROR: Architecture generation failed')
-      set({ status: 'failed', currentStep: 'Failed to generate architecture. Try again.' })
+      // Revert to requirements phase so the user can retry from there
+      set({ status: 'idle', sdlcStep: 'requirements', sdlcPhase: 0, currentStep: '' })
+      toast.error('Architecture failed', 'Review your requirements and try confirming again')
     }
   },
 
@@ -162,7 +169,9 @@ export const useGenerationStore = create<GenerationState & GenerationActions>((s
       set({ wireframeDoc: wireframe, status: 'idle', sdlcStep: 'design', sdlcPhase: 2, progress: 55, currentStep: '' })
     } catch {
       log('ERROR: Wireframe generation failed')
-      set({ status: 'failed', sdlcStep: 'failed', currentStep: 'Wireframe generation failed. Try again.' })
+      // Revert to architecture phase so the user can retry confirming
+      set({ status: 'idle', sdlcStep: 'architecture', sdlcPhase: 1, currentStep: '' })
+      toast.error('Wireframe failed', 'Review your architecture and try confirming again')
     }
   },
 
@@ -173,7 +182,7 @@ export const useGenerationStore = create<GenerationState & GenerationActions>((s
     const log = (msg: string) => get().appendLog(msg)
     log('Design confirmed — starting code generation...')
     if (layoutDescription) log('Layout hints captured from wireframe canvas')
-    set({ status: 'generating', sdlcStep: 'implementation', sdlcPhase: 3, currentStep: 'Generating source files...', progress: 65 })
+    set({ status: 'generating', sdlcStep: 'implementation', sdlcPhase: 3, currentStep: 'Generating source files...', progress: 65, generationStartMs: Date.now(), generationDurationMs: null })
 
     try {
       log('Calling generation pipeline (requirements + architecture + layout)...')
@@ -205,13 +214,15 @@ export const useGenerationStore = create<GenerationState & GenerationActions>((s
       )
       await supabase.from('projects').update({ status: 'complete' }).eq('id', projectId)
 
-      log(`Project complete — ${files.length} files generated and saved`)
-      set({ status: 'complete', generatedFiles: files, sdlcStep: 'complete', sdlcPhase: 4, progress: 100, currentStep: 'Project ready!' })
+      const durationMs = get().generationStartMs ? Date.now() - get().generationStartMs! : null
+      log(`Project complete — ${files.length} files generated and saved${durationMs ? ` in ${(durationMs / 1000).toFixed(1)}s` : ''}`)
+      set({ status: 'complete', generatedFiles: files, sdlcStep: 'complete', sdlcPhase: 4, progress: 100, currentStep: 'Project ready!', generationDurationMs: durationMs })
       toast.success('Project generated', `${files.length} files ready — click Run to preview`)
     } catch {
       log('ERROR: Code generation failed')
-      set({ status: 'failed', sdlcStep: 'failed', currentStep: 'Code generation failed. Try again.' })
-      toast.error('Generation failed', 'Check your API key and try again')
+      // Revert to design phase so the user can retry from there without losing requirements/architecture
+      set({ status: 'idle', sdlcStep: 'design', sdlcPhase: 2, currentStep: '' })
+      toast.error('Code generation failed', 'Check your API key and try confirming the design again')
     }
   },
 

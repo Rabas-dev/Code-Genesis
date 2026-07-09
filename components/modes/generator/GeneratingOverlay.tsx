@@ -4,11 +4,13 @@ import { useGenerationStore } from '@/store/useGenerationStore'
 import { Check, Loader2, FileSearch, LayoutTemplate, Code2, TestTube, Rocket } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// IDs must match the sdlcPhase values set in useGenerationStore:
+// 0=requirements, 1=architecture, 2=design, 3=implementation, 4=complete
 const SDLC_STEPS = [
   { id: 0, label: 'Requirements', Icon: FileSearch },
   { id: 1, label: 'Architecture', Icon: LayoutTemplate },
-  { id: 2, label: 'Implementation', Icon: Code2 },
-  { id: 3, label: 'Testing', Icon: TestTube },
+  { id: 2, label: 'Design', Icon: TestTube },
+  { id: 3, label: 'Implementation', Icon: Code2 },
   { id: 4, label: 'Deploy', Icon: Rocket },
 ]
 

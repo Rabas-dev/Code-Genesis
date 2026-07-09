@@ -8,7 +8,7 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
   loading: () => (
     <div className="flex-1 h-full flex items-center justify-center bg-muted/10">
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
-        <div className="w-8 h-8 border-2 border-violet-500/40 border-t-violet-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
         <span className="text-sm">Loading design canvas…</span>
       </div>
     </div>
@@ -21,8 +21,8 @@ export function DesignCanvas() {
       {/* Header */}
       <div className="shrink-0 px-4 py-2 border-b border-border bg-muted/20 flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-violet-400">Design Canvas</span>
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-violet-500/15 text-violet-400 border border-violet-500/20">
+          <span className="text-xs font-semibold text-primary">Design Canvas</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-primary/10 text-primary border border-primary/20">
             Wireframe Mode
           </span>
         </div>

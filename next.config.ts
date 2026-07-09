@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   serverExternalPackages: ['node-pty', 'playwright', '@playwright/test'],
   // The terminal (xterm) is an imperative, stateful component holding a live
   // WebSocket + PTY. StrictMode double-mounts in dev, spawning a second xterm

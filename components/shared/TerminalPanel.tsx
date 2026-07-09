@@ -8,7 +8,29 @@ interface TerminalPanelProps {
   autorun?: boolean
   onPortDetected?: (port: number) => void
   onReady?: () => void
+  /** Fired (debounced) when a Next.js build/runtime error is detected in output */
+  onBuildError?: (errorText: string) => void
+  /** Fired when the dev server reports a successful compile */
+  onCompiled?: () => void
 }
+
+// Strip ANSI escape codes so captured error text is clean for the LLM.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '')
+}
+
+const ERROR_MARKERS = [
+  'Failed to compile',
+  'Module not found',
+  'Unhandled Runtime Error',
+  'Type error:',
+  'SyntaxError',
+  'ReferenceError',
+  'Error: Cannot find module',
+]
+const SUCCESS_MARKERS = ['✓ Compiled', 'Compiled successfully', 'compiled successfully']
 
 // Write text to the clipboard with a fallback for non-secure / unfocused contexts.
 function writeClipboard(text: string): Promise<void> {
@@ -32,7 +54,7 @@ function fallbackCopy(text: string) {
   } catch { /* ignore */ }
 }
 
-export function TerminalPanel({ projectId, autorun = false, onPortDetected, onReady }: TerminalPanelProps) {
+export function TerminalPanel({ projectId, autorun = false, onPortDetected, onReady, onBuildError, onCompiled }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<import('xterm').Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -40,7 +62,15 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
   const portDetectedRef = useRef(false)
   const roRef = useRef<ResizeObserver | null>(null)
   const disposedRef = useRef(false)
+  // Guards fit() until xterm's renderService is fully up (double-rAF after open()).
+  // Calling fit() before this is set causes Viewport._innerRefresh to crash because
+  // _renderService.dimensions is undefined.
+  const initializedRef = useRef(false)
   const [copied, setCopied] = useState(false)
+  // Rolling buffer + error-capture state for the auto-fix agent
+  const outBufRef = useRef('')
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastErrorSentRef = useRef('')
 
   // Copy the current selection, or the entire scrollback buffer if nothing is selected.
   const handleCopy = useCallback(async () => {
@@ -62,14 +92,14 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
     setTimeout(() => setCopied(false), 1500)
   }, [])
 
-  // Only fit when container has real pixel dimensions
+  // Only fit when xterm is fully initialized AND container has real pixel dimensions.
   const safeFit = useCallback(() => {
-    if (disposedRef.current) return
+    if (disposedRef.current || !initializedRef.current) return
     const container = containerRef.current
     if (!container || container.clientWidth < 10 || container.clientHeight < 10) return
     try {
       fitAddonRef.current?.fit()
-    } catch { /* swallow dimension errors */ }
+    } catch { /* swallow dimension errors during teardown */ }
   }, [])
 
   // Poll via rAF until the container has real dimensions (max 2 seconds)
@@ -146,11 +176,17 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Fit + focus after xterm's internal paint cycle completes.
-    // focus() is required so the hidden textarea that captures keystrokes is active.
+    // Double-rAF: the first frame lets xterm's open() finish building its
+    // renderService; the second frame is when dimensions are guaranteed non-null.
+    // Only after both frames do we mark initializedRef=true and call fit/focus.
     requestAnimationFrame(() => {
-      safeFit()
-      if (!disposedRef.current) term.focus()
+      if (disposedRef.current) return
+      requestAnimationFrame(() => {
+        if (disposedRef.current) return
+        initializedRef.current = true
+        safeFit()
+        term.focus()
+      })
     })
 
     // WebSocket
@@ -171,6 +207,29 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
         const msg = JSON.parse(event.data)
         if (msg.type === 'output') {
           term.write(msg.data)
+
+          // ── Build-error / compile-success detection for the auto-fix agent ──
+          if (onBuildError || onCompiled) {
+            outBufRef.current = (outBufRef.current + stripAnsi(msg.data)).slice(-8000)
+            const buf = outBufRef.current
+
+            if (SUCCESS_MARKERS.some((m) => buf.includes(m))) {
+              onCompiled?.()
+            }
+            if (onBuildError && ERROR_MARKERS.some((m) => buf.includes(m))) {
+              // Debounce so the full multi-line error finishes printing first
+              if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+              errorTimerRef.current = setTimeout(() => {
+                const text = outBufRef.current.trim()
+                // Avoid re-reporting the same error repeatedly
+                if (text && text !== lastErrorSentRef.current) {
+                  lastErrorSentRef.current = text
+                  onBuildError(text)
+                }
+              }, 1200)
+            }
+          }
+
           if (!portDetectedRef.current) {
             // First extract the port from the URL line (appears before compilation)
             const urlPatterns = [
@@ -293,7 +352,7 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
     })
     ro.observe(containerRef.current)
     roRef.current = ro
-  }, [projectId, autorun, onPortDetected, onReady, safeFit, waitForContainerSize])
+  }, [projectId, autorun, onPortDetected, onReady, onBuildError, onCompiled, safeFit, waitForContainerSize])
 
   useEffect(() => {
     portDetectedRef.current = false
@@ -301,6 +360,7 @@ export function TerminalPanel({ projectId, autorun = false, onPortDetected, onRe
 
     return () => {
       disposedRef.current = true
+      initializedRef.current = false
       roRef.current?.disconnect(); roRef.current = null
       wsRef.current?.close(); wsRef.current = null
       termRef.current?.dispose(); termRef.current = null

@@ -121,7 +121,7 @@ function ProviderRow({
               value={provider.apiKey}
               onChange={(e) => updateProvider(provider.id, { apiKey: e.target.value })}
               placeholder={meta.keyPlaceholder}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/50 pr-8 placeholder:text-muted-foreground/40"
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 pr-8 placeholder:text-muted-foreground/40"
             />
             <button
               type="button"
@@ -161,7 +161,7 @@ function ProviderRow({
         <select
           value={provider.model}
           onChange={(e) => updateProvider(provider.id, { model: e.target.value })}
-          className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/50 text-foreground"
+          className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
         >
           {models.map((m) => (
             <option key={m} value={m}>{m}</option>
@@ -189,7 +189,7 @@ export function LLMSettingsModal() {
       <div className="relative z-10 w-full max-w-lg bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
             <span className="text-base">🤖</span>
           </div>
           <div>
@@ -239,7 +239,7 @@ export function LLMSettingsModal() {
           <p className="text-[10px] text-muted-foreground">Changes save automatically</p>
           <button
             onClick={closeSettings}
-            className="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold transition-colors"
+            className="px-4 py-1.5 rounded-lg bg-primary hover:opacity-90 text-white text-xs font-semibold transition-colors"
           >
             Done
           </button>

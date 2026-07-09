@@ -1,5 +1,6 @@
 import { callLLM, type ProviderConfig } from '@/lib/ai/providers/llm-router'
 import { safeParse } from '@/lib/ai/utils/parser'
+import { languageInstruction } from '@/lib/ai/utils/language'
 import type { RequirementsDoc } from './requirements'
 
 export interface ArchFileNode {
@@ -63,6 +64,8 @@ ${answeredQuestions}
 
 Design a minimal, focused architecture. Only include what's needed for this specific project.`
 
-  const raw = await callLLM(SYSTEM_PROMPT, userMessage, providers)
+  const langNote = languageInstruction(prompt)
+  const systemWithLang = langNote ? `${SYSTEM_PROMPT}\n\n${langNote}` : SYSTEM_PROMPT
+  const raw = await callLLM(systemWithLang, userMessage, providers)
   return safeParse<ArchitectureDoc>(raw)
 }

@@ -25,8 +25,8 @@ export function RequirementsPhase() {
     <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto w-full">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center">
-          <FileText className="w-5 h-5 text-violet-400" />
+        <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
+          <FileText className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1">
           <h2 className="text-lg font-bold">{requirementsDoc.projectName}</h2>
@@ -34,7 +34,7 @@ export function RequirementsPhase() {
         </div>
         <button
           onClick={handleDownloadSRS}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted hover:border-violet-500/30 transition-colors press"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted hover:border-primary/30 transition-colors press"
           title="Download Software Requirements Specification"
         >
           <Download className="w-3.5 h-3.5" />
@@ -68,7 +68,7 @@ export function RequirementsPhase() {
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recommended Stack</p>
         <div className="flex flex-wrap gap-2">
           {requirementsDoc.techStack.map((tech) => (
-            <span key={tech} className="px-2.5 py-1 text-xs rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 font-medium">
+            <span key={tech} className="px-2.5 py-1 text-xs rounded-lg bg-primary/10 border border-primary/20 text-primary font-medium">
               {tech}
             </span>
           ))}
@@ -89,7 +89,7 @@ export function RequirementsPhase() {
         {requirementsDoc.questions.map((q, i) => (
           <div key={q.id} className="rounded-lg border border-border bg-card p-4 space-y-2">
             <div className="flex items-start gap-2">
-              <span className="w-5 h-5 rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+              <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
                 {i + 1}
               </span>
               <p className="text-sm font-medium text-foreground">{q.question}</p>
@@ -99,7 +99,7 @@ export function RequirementsPhase() {
               placeholder={q.hint}
               value={requirementAnswers[q.id] ?? ''}
               onChange={(e) => setRequirementAnswer(q.id, e.target.value)}
-              className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 placeholder:text-muted-foreground/50 transition-all"
+              className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 placeholder:text-muted-foreground/50 transition-all"
             />
           </div>
         ))}

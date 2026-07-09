@@ -117,8 +117,8 @@ export function QualityPanel() {
   if (!allFiles.length) {
     return (
       <div className="flex flex-col h-full items-center justify-center gap-3 p-8 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
-          <Gauge className="w-6 h-6 text-violet-400" />
+        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Gauge className="w-6 h-6 text-primary" />
         </div>
         <p className="text-sm font-medium">Code Quality Score</p>
         <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
@@ -132,8 +132,8 @@ export function QualityPanel() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="shrink-0 flex items-center gap-2.5 px-4 h-11 border-b border-border bg-muted/20">
-        <div className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center">
-          <Gauge className="w-3.5 h-3.5 text-violet-400" />
+        <div className="w-6 h-6 rounded-lg bg-primary/15 flex items-center justify-center">
+          <Gauge className="w-3.5 h-3.5 text-primary" />
         </div>
         <div className="flex-1">
           <p className="text-sm font-semibold leading-none">Code Quality</p>
@@ -144,7 +144,7 @@ export function QualityPanel() {
         <button
           onClick={analyze}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold transition-colors press disabled:opacity-60"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:opacity-90 text-white text-xs font-semibold transition-colors press disabled:opacity-60"
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           {loading ? 'Analyzing…' : 'Re-analyze'}
@@ -155,7 +155,7 @@ export function QualityPanel() {
         <div className="p-5 space-y-6">
           {loading && !result && (
             <div className="flex flex-col items-center justify-center gap-3 py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">AI is reviewing your codebase…</p>
             </div>
           )}

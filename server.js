@@ -114,6 +114,9 @@ function writeStartScript(projectDir) {
     'echo ""',
     'echo "  \\033[34m🚀\\033[0m Starting Next.js on port 3001..."',
     'echo ""',
+    // Cap the generated dev server's heap so it can't balloon during a recompile
+    // and push total memory past what macOS allows (which SIGKILLs Code Genesis).
+    'export NODE_OPTIONS="--max-old-space-size=1024"',
     'exec npm run dev',
   ]
   const scriptPath = path.join(projectDir, '_genesis_start.sh')

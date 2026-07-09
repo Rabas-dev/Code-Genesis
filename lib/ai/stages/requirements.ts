@@ -1,5 +1,6 @@
 import { callLLM, type ProviderConfig } from '@/lib/ai/providers/llm-router'
 import { safeParse } from '@/lib/ai/utils/parser'
+import { languageInstruction } from '@/lib/ai/utils/language'
 
 export interface RequirementQuestion {
   id: string
@@ -33,6 +34,8 @@ Return ONLY valid JSON — no markdown, no explanation:
 }`
 
 export async function runRequirements(prompt: string, providers?: ProviderConfig[]): Promise<RequirementsDoc> {
-  const raw = await callLLM(SYSTEM_PROMPT, `Project prompt: ${prompt}`, providers)
+  const langNote = languageInstruction(prompt)
+  const systemWithLang = langNote ? `${SYSTEM_PROMPT}\n\n${langNote}` : SYSTEM_PROMPT
+  const raw = await callLLM(systemWithLang, `Project prompt: ${prompt}`, providers)
   return safeParse<RequirementsDoc>(raw)
 }

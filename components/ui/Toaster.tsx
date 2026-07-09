@@ -8,7 +8,7 @@ const VARIANT_STYLES: Record<ToastVariant, { icon: React.ComponentType<{ classNa
   success: { icon: CheckCircle2, ring: 'border-emerald-500/30', iconColor: 'text-emerald-400' },
   error: { icon: AlertCircle, ring: 'border-red-500/30', iconColor: 'text-red-400' },
   info: { icon: Info, ring: 'border-blue-500/30', iconColor: 'text-blue-400' },
-  loading: { icon: Loader2, ring: 'border-violet-500/30', iconColor: 'text-violet-400' },
+  loading: { icon: Loader2, ring: 'border-primary/30', iconColor: 'text-primary' },
 }
 
 export function Toaster() {
